@@ -18,6 +18,11 @@ Therefore, people who want to apply this project to a real network can change th
 ##	Installation process
 Install all codes to your local computer;
 ##	Build and test
+Open "./withUDP/client/clientTest.cc" and "./withUDP/server/serverTest.cc" in two different terminals. 
+Change the path and filename in the code for your computer.
+Build these two files. Executed "./withUDP/server/serverTest.cc" first, then executed 
+"./withUDP/client/clientTest.cc".  If you want to apply these codes into real network, you should dive into the code and change 
+the PORT and IP address of socket accordingly. 
 
 # Developed platform
 + operating system: Ubuntu20.04 (Linux)
