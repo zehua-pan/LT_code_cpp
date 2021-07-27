@@ -7,9 +7,10 @@ const int PACKET_SIZE = 32768;
 const int DISTRIBUTION_RANGE = 25;
 const int PORT = 8080;
 const size_t CLI_BUF_SIZE = 128;
-const double EXCESS_COEFFIENT = 1.5;
+const double EXCESS_COEFFIENT = 1.8;
+const int FILENAME_MAXLEN = 128;
 
-struct timeval tv = {0, 100 * 1000};
+struct timeval tvY = {0, 100 * 1000};
 
 struct symbol
 {
@@ -25,7 +26,7 @@ struct symbol
     int symbolID;
     int degree;
     long filesize;
-    string filename;
+    char filenameArray[FILENAME_MAXLEN];
     int neighbours[DISTRIBUTION_RANGE];
     char data[PACKET_SIZE];
 };

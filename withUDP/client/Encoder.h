@@ -18,7 +18,7 @@ class Encoder
     friend struct test;
     public:
         // constructor
-        Encoder(const string dsp, const string f) :
+        Encoder(const std::string dsp, const std::string f) :
             dataSrcPath(dsp), filename(f), inFileFullName(dsp + f), blocks(nullptr), sentSymN(0) {}
         // copy control: rule of three??
         ~Encoder();
@@ -29,15 +29,17 @@ class Encoder
 
     private:
         // member functions
+        void sendSyms(symbol& newsym, int num, Sender&);
+        void setNewSymbol(symbol& newsym);
         std::vector<int> get_indices(int , int) const;
         std::vector<int> reservoir_sampling(int, int) const;
         void XOR_twoBlocks(char *d1, char *d2) const;
         void set_filesize();
 
         // data member
-        const string dataSrcPath;
-        const string filename;
-        const string inFileFullName;
+        const std::string dataSrcPath;
+        const std::string filename;
+        const std::string inFileFullName;
         char **blocks;
         long filesize;
         long blocks_n;
@@ -142,15 +144,15 @@ void Encoder::XOR_twoBlocks(char *d1, char *d2) const
     }
 }
 
-void setNewSymbol(symbol& newsym)
+void Encoder::setNewSymbol(symbol& newsym)
 {
     static DegreeGenerator degreeGenerator(DISTRIBUTION_RANGE);
-    std::vector<int> neighbours = get_indices(symbolID, degree);
-    degree = degreeGenerator.getDegree();
+    int degree = sentSymN % blocks_n == 0 ? 1 : degreeGenerator.getDegree(); // 1 is entry for decoding
+    std::vector<int> neighbours = get_indices(sentSymN, degree);
     newsym.symbolID = sentSymN; 
-    newsym.degree = sentSymN % blocks_n == 0 ? 1 : degree; // entry for decoding
+    newsym.degree = degree;
     newsym.filesize = filesize; 
-    newsym.filename = filename;
+    strcpy(newsym.filenameArray, filename.c_str());
     memset(newsym.data, 0, sizeof(newsym.data));
     int j = 0;
     for(int blockIndex : neighbours)
@@ -160,34 +162,34 @@ void setNewSymbol(symbol& newsym)
     }
 }
 
-void sendSyms(symbol& newsym, int num)
+void Encoder::sendSyms(symbol& newsym, int num, Sender& sender)
 {
-    static Sender sender;
     for(int i = 0; i < num; ++i)
     {
         setNewSymbol(newsym);
         sender.send(newsym);
-        ++sentSymN;
+        ++sentSymN; // sentSymN must be updated for every symbol
     }
 }
 
 void Encoder::encode()
 {
+    Sender sender;
     long sendNumThreshold = static_cast<long>(EXCESS_COEFFIENT * blocks_n);
     long checkInterval = (long)((double)sendNumThreshold * 0.1) + 1;
     struct symbol newsym; // empty symbol for constructing
 
-    std::cout << "encode begins..." << std::endl;
+    std::cout << "begin sending symbols..." << std::endl;
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-    sendSyms(newsym, sendNumThreshold);
-    while(sender.checkEndMsg())
+    sendSyms(newsym, sendNumThreshold, sender);
+    std::cout << "sent " << sentSymN << " symbols, reach threshold" << std::endl;
+    while(sender.checkEndMsg() == false)
     {
-        sendSyms(newsym, checkInterval);
+        std::cout << "didn't receive end message, keep sending..." << std::endl;
+        sendSyms(newsym, checkInterval, sender);
     }
     std::cout << "receive end message from server, end this iteration" << std::endl;
-
-    std::cout << "encode succeed!" << std::endl; 
     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
     std::cout << "encode time = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() / 1000 << "[ms]" << std::endl;
 }

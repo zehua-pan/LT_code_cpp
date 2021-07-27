@@ -3,13 +3,14 @@
 
 #include <time.h>
 
-const int FAILURE = -1;
+const int FAILURE = 0;
 const int SUCCESS = 1;
 const int PACKET_SIZE = 32768;
 const int DISTRIBUTION_RANGE = 25;
 const int PORT = 8080;
-const std::string terminalMsg("end");
 const double THRESHOLD_COEFFICIENT = 1.7;
+const std::string terminalMsg("end");
+const int FILENAME_MAXLEN = 128;
 
 struct timeval tvY = {0, 100 * 1000};
 struct timeval tvN = {0, 0};
@@ -28,6 +29,7 @@ struct symbol
     int symbolID;
     int degree;
     long filesize;
+    char filenameArray[FILENAME_MAXLEN];
     int neighbours[DISTRIBUTION_RANGE];
     char data[PACKET_SIZE];
 };

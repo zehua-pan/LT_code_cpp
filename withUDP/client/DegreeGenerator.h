@@ -4,6 +4,7 @@
 #include <vector>
 #include <random>
 #include <math.h>
+#include <time.h>
 
 class DegreeGenerator
 {
@@ -30,6 +31,7 @@ DegreeGenerator::DegreeGenerator(int distributionUpLim) : n(distributionUpLim)
     for(int i = 0; i < n + 1; ++i)
         discreteDistribution[i] = lround(1e6 * probabilities[i]);
 
+    e.seed(time(0));
     ranD = std::discrete_distribution<long>(discreteDistribution.begin(), discreteDistribution.end());
 }
 

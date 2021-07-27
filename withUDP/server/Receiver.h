@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <cstring>
 #include "globalParameters.h"
 
 class Receiver 
@@ -14,10 +15,11 @@ class Receiver
         ~Receiver() {close(sockfd);}
         // member functions
         symbol* getSymbol();
-        void terminate();
+        void endIteration();
     private:
         // data member 
         int sockfd;
+        socklen_t len;
         char buffer[SER_BUF_SIZE];
         struct sockaddr_in servaddr, cliaddr;
 };
@@ -26,7 +28,7 @@ Receiver::Receiver()
 {
     // creating socket file descriptor
     if((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-        throw runtime_error("server : socket creation failed");
+        throw std::runtime_error("server : socket creation failed");
 
     memset(&servaddr, 0, sizeof(servaddr));
     memset(&cliaddr, 0, sizeof(cliaddr));
@@ -38,7 +40,7 @@ Receiver::Receiver()
     
     // bind the socket with the server address
     if(bind(sockfd, (const struct sockaddr*)&servaddr, sizeof(servaddr)) < 0)
-        throw runtime_error("bind failed");
+        throw std::runtime_error("bind failed");
 }
 
 inline
@@ -49,22 +51,22 @@ symbol* Receiver::getSymbol()
     return sym;
 }
 
-void Receiver::terminate()
+void Receiver::endIteration()
 {
     // set timeout for recvfrom 
     if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tvY, sizeof(tvY)) < 0)
-        throw runtime_error("setsockopt: set timeout error");
+        throw std::runtime_error("setsockopt: set timeout error");
 
     sendto(sockfd, terminalMsg.c_str(), terminalMsg.size(), MSG_CONFIRM, (const struct sockaddr*)&cliaddr, len);
     while(recvfrom(sockfd, buffer, SER_BUF_SIZE, MSG_WAITALL, (struct sockaddr*)&cliaddr, &len) > 0)
     {
         sendto(sockfd, terminalMsg.c_str(), terminalMsg.size(), MSG_CONFIRM, (const struct sockaddr*)&cliaddr, len);
     }
-    cout << "no more data receive from client, one iteration ends" << endl;
+    std::cout << "no more data receive from client, one iteration ends" << std::endl;
 
     // reset for next recvfrom
     if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tvN, sizeof(tvN)) < 0)
-        throw runtime_error("setsockopt: set no timeout error");
+        throw std::runtime_error("setsockopt: set no timeout error");
 }
 
 #endif

@@ -1,44 +1,51 @@
-#ifndef RECEIVER_H
-#define RECEIVER_H
+#ifndef DECODER_H
+#define DECODER_H 
 
 #include <chrono>
 #include <unordered_set>
 #include <deque>
+#include <fstream>
 #include <vector>
 #include <unordered_set>
 #include "globalParameters.h"
-#include "Receiver.h"
+#include "./Receiver.h"
 
 class Decoder 
 {
     public:
         // constructor
-        Decoder(const string sp):savePath(sp), blocks(nullptr) {}
+        Decoder(const std::string sp):savePath(sp), blocks(nullptr), receivedSymN(0) {}
         // copy constrol : rule of three??
-        ~Decoder();
+        ~Decoder() {free();}
         // public member functions
         void start();
     private:
         // member functions
-        void decode();
+        void receiveFirstSymForInit();
+        void receiveSymbols(int start, int num);
+        int decode();
         void decode_init();
         void writeBlocks(const symbol& sym, int neighbour);
         void XOR_twoBlocks(char *d1, char *d2);
         void reduce_neighbours(int);
         void removeSymbolFromBlock(symbol& sym, int symIndex, int blockIndex);
         void writeFile() const;
+        void free();
+        void resetDataMember();
+        void resetDecoder();
 
-        // data member
-        char **blocks;
+        /* data members (never change) */
+        const std::string savePath;
+        Receiver receiver;
+        /* data member (do not change during one iteration) */
         long filesize;
         long blocks_n;
         long receivedNumThreshold;
         long redecodeNumInterval;
-        string filename;
-        const string savePath;
-        std::vector<int> stream; // name stream is for general sample algorithm
-        Receiver receiver;
-
+        std::string filename;
+        /* data members (might change if decode fails) */
+        long receivedSymN;
+        char **blocks;
         std::vector<symbol> decodeSyms;
         std::vector<symbol> backupSyms;
         // maintain a queue of index of symbol with degree 1
@@ -54,49 +61,56 @@ class Decoder
 
 };
 
-Decoder::~Decoder()
-{
-    if(blocks)
-    {
-        for(int i = 0; i < blocks_n; ++i)
-            delete[] blocks[i];
-        delete[] blocks;
-    }
-}
 
 void Decoder::start()
 {
     while(1)
     {
+
+        std::cout << "waiting for data from client..." << std::endl;
         receiveFirstSymForInit();
-        receiveEnoughSyms();
+        std::cout << "receiving symbols..." << std::endl;
+        receiveSymbols(1, receivedNumThreshold);
+
+        std::cout << "have received " << receivedSymN << " symbols" 
+            << ", start decoding" << std::endl;
+        std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+
         while(decode() == FAILURE)
         {
-            receiveMoreSyms();
+            std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+            std::cout << "decode fail, decode time = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() / 1000 << "[ms]" << std::endl;
+            std::cout << "try to receive more symbols" << std::endl;
+
+            resetDataMember();
+            receiveSymbols(receivedSymN, receivedSymN + redecodeNumInterval);
+
+            std::cout << "currently received " << receivedSymN << " symbols, try decode again.." << std::endl;
         }
-        receiver.terminate();
+
+        std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+        std::cout << "decode succeed, decode time = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() / 1000 << "[ms]" << std::endl;
+
+        receiver.endIteration();
         writeFile();
+        resetDecoder();
     }
 }
 
-void Decoder::receiveMoreSyms()
+inline
+void Decoder::resetDataMember()
 {
-    decodeSyms = backupSyms;
-    for(int i = 0; i < redecodeNumInterval; ++i)
-    {
-        symbol* sym = receiver.getSymbol();
-        *(decodeSyms.begin() + i) = *sym;
-        *(backupSyms.begin() + i) = *sym;
-    }
+    decodeSyms = backupSyms; // recover symbols that have been modified
+    // reset all blocks data
+    for(int i = 0; i < blocks_n; ++i)
+        memset(blocks[i], 0, sizeof(blocks[i]));
 }
 
 void Decoder::receiveFirstSymForInit()
 {
-    symbol* firstSym = receiver.getSymbol();
-    decodeSyms.push_back(*firstSym);
-    backupSyms.push_back(*firstSym);
-    // initialize data members
-    filename = firstSym->filename;
+    struct symbol* firstSym = receiver.getSymbol();
+    // initialize data members (won't change in one iteration)
+    filename = std::string(firstSym->filenameArray);
     filesize = firstSym->filesize;
     blocks_n = filesize / PACKET_SIZE + 1;
     receivedNumThreshold = (long)(blocks_n * THRESHOLD_COEFFICIENT);
@@ -105,33 +119,37 @@ void Decoder::receiveFirstSymForInit()
     blocks = new char*[blocks_n];
     for(int i = 0; i < blocks_n; ++i)
         blocks[i] = new char[PACKET_SIZE];
-    // initialize stream for reservoir_sampling algorithm
-    stream.resize(blocks_n);
-    std::iota(stream.begin(), stream.end(), 0);
+    // update some data members
+    decodeSyms.push_back(*firstSym);
+    backupSyms.push_back(*firstSym);
+    receivedSymN += 1;
 }
 
-inline
-void Decoder::receiveEnoughSyms()
+inline 
+void Decoder::receiveSymbols(int start, int sum)
 {
-    decodeSyms.resize(receivedNumThreshold);
-    backupSyms.resize(receivedNumThreshold);
-    for(int i = 1; i < receivedNumThreshold; ++i)
+    decodeSyms.resize(sum);
+    backupSyms.resize(sum);
+    for(int i = start; i < sum; ++i)
     {
         symbol* sym = receiver.getSymbol();
         *(decodeSyms.begin() + i) = *sym;
         *(backupSyms.begin() + i) = *sym;
     }
+    receivedSymN += sum - start;
 }
 
-void Decoder::decode_init(int receivedSymbolsN)
+void Decoder::decode_init()
 {
-    // initialize/clear containers for decoding
-    neighboursOfSymbols = std::vector<std::unordered_set<int>>(receivedSymbolsN);
+    std::cout << "decode initialize..." << std::endl;
+    // initialize containers for decoding
+    neighboursOfSymbols = std::vector<std::unordered_set<int>>(receivedSymN);
     linkedSymIndexOfBlocks = std::vector<std::unordered_set<int>>(blocks_n);
     degOneSymIndex = std::deque<int>();
-
-    // scan all decodeSyms to fill all containers
-    for(int i = 0; i < receivedSymbolsN; ++i)
+    recoveredBlockIndex = std::unordered_set<int>();
+    removedSymIndex = std::unordered_set<int>();
+    // scan all symbols to fill all containers
+    for(int i = 0; i < receivedSymN; ++i)
     {
         symbol& sym = decodeSyms[i];
         if(sym.degree == 1)
@@ -148,12 +166,8 @@ void Decoder::decode_init(int receivedSymbolsN)
 
 int Decoder::decode()
 {
-    std::cout << "decode initialize..." << std::endl;
     decode_init();
-    
     /* decoding begin */
-    std::cout << "decode begin..." << std::endl;
-    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
     while(degOneSymIndex.size() > 0)
     {
         // pop out symbol index(if none, fail) and find this symbol in decodeSyms 
@@ -172,9 +186,6 @@ int Decoder::decode()
         recoveredBlockIndex.insert(blockIndex);
         if(recoveredBlockIndex.size() == blocks_n)
         {
-            std::cout << "decode succeed!" << std::endl;
-            std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-            std::cout << "decode time = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() / 1000 << "[ms]" << std::endl;
             return SUCCESS;
         }
         removeSymbolFromBlock(sym, symIndex, blockIndex);
@@ -250,7 +261,7 @@ void Decoder::XOR_twoBlocks(char *d1, char *d2)
 
 void Decoder::writeFile() const
 {
-    string outFileFullName = savePath + filename;
+    std::string outFileFullName = savePath + filename;
     std::ofstream outFile(outFileFullName.c_str(), std::ofstream::binary);
     if(!outFile)
         throw std::runtime_error("can't open output file");
@@ -258,7 +269,34 @@ void Decoder::writeFile() const
         outFile.write(blocks[i], PACKET_SIZE);
     outFile.write(blocks[blocks_n - 1], filesize % PACKET_SIZE);
     outFile.close();
-    std::cout << "have writed data to file" << outFileFullName << std::endl;
+    std::cout << "have writed all data to file: " << outFileFullName << std::endl;
+}
+
+void Decoder::free()
+{
+    if(blocks)
+    {
+        for(int i = 0; i < blocks_n; ++i)
+            delete[] blocks[i];
+        delete[] blocks;
+    }
+}
+
+void Decoder::resetDecoder()
+{
+    std::cout << "reset all data members for next iteration" << std::endl;
+    std::cout << std::endl;
+    free();
+    blocks = nullptr;
+    blocks_n = receivedNumThreshold = redecodeNumInterval = receivedSymN = 0;
+    filename = std::string();
+    decodeSyms = std::vector<symbol>();
+    backupSyms = std::vector<symbol>();
+    degOneSymIndex = std::deque<int>();
+    neighboursOfSymbols = std::vector<std::unordered_set<int>>();
+    linkedSymIndexOfBlocks = std::vector<std::unordered_set<int>>();
+    recoveredBlockIndex = std::unordered_set<int>();
+    removedSymIndex = std::unordered_set<int>();
 }
 
 #endif

@@ -1,7 +1,10 @@
 #include <iostream>
+#include <cstring>
 #include <vector>
 
 using namespace std;
+
+const int FILENAME_MAXLEN = 32;
 
 struct symbol
 {
@@ -9,31 +12,26 @@ struct symbol
     symbol() = default;
     symbol(int i, int d, long f): symbolID(i), degree(d), filesize(f){}
     // copy control
-    symbol(const symbol& s) : symbolID(s.symbolID), degree(s.degree), filesize(s.filesize){}
-    symbol& operator=(const symbol& s)
-    {
-        symbolID = s.symbolID;
-        degree = s.degree;
-        filesize = s.filesize;
-        cout << "copy assignment" << endl;
-        return *this;
-    }
+    symbol(const symbol& s) : symbolID(s.symbolID), degree(s.degree), filesize(s.filesize){copyNewData(s);}
+    symbol& operator=(const symbol& s);
+    // member functions
+    void copyNewData(const symbol& s);
+    // data member
     int symbolID;
     int degree;
     long filesize;
+    char filenameArray[FILENAME_MAXLEN];
 };
+
 
 int main()
 {
-    // symbol* sym = new symbol(1, 1, 1);
-    // vector<symbol> symbols;
-    // symbols.push_back(std::move(*sym));
-
-
-    const string path("a");
-    const string name("b");
-    string c = path + name;
-    cout << c << endl;
+    string filename("a.txt");
+    struct symbol newsym(1, 1, 1);
+    cout << sizeof(newsym) << endl;
+    strcpy(newsym.filenameArray, filename.c_str());
+    string newname(newsym.filenameArray);
+    cout << newname << endl;
     return 0;
 }
 
